@@ -16,16 +16,22 @@
  */
 package org.apache.lucene.document;
 
+import java.io.IOException;
 import java.math.BigInteger;
+import java.util.Arrays;
 
+import org.apache.lucene.search.PointInSetQuery;
 import org.apache.lucene.search.PointRangeQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.BytesRefIterator;
 import org.apache.lucene.util.NumericUtils;
 
 /** 
- * A 128-bit integer field that is indexed dimensionally such that finding
- * all documents within an N-dimensional shape or range at search time is
- * efficient.  Multiple values for the same field in one documents
+ * An indexed 128-bit {@code BigInteger} field.
+ * <p>
+ * Finding all documents within an N-dimensional shape or range at search time is
+ * efficient.  Multiple values for the same field in one document
  * is allowed. 
  * <p>
  * This field defines static factory methods for creating common queries:
@@ -33,6 +39,7 @@ import org.apache.lucene.util.NumericUtils;
  *   <li>{@link #newExactQuery newExactQuery()} for matching an exact 1D point.
  *   <li>{@link #newRangeQuery newRangeQuery()} for matching a 1D range.
  *   <li>{@link #newMultiRangeQuery newMultiRangeQuery()} for matching points/ranges in n-dimensional space.
+ *   <li>{@link #newSetQuery newSetQuery()} for matching a set of 1D values.
  * </ul>
  */
 public class BigIntegerPoint extends Field {
@@ -100,8 +107,8 @@ public class BigIntegerPoint extends Field {
   @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
-    result.append(type.toString());
-    result.append('<');
+    result.append(getClass().getSimpleName());
+    result.append(" <");
     result.append(name);
     result.append(':');
 
@@ -154,7 +161,7 @@ public class BigIntegerPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null.
    * @return a query matching documents with this exact value
    */
-  public static PointRangeQuery newExactQuery(String field, BigInteger value) {
+  public static Query newExactQuery(String field, BigInteger value) {
     return newRangeQuery(field, value, true, value, true);
   }
 
@@ -178,7 +185,7 @@ public class BigIntegerPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null.
    * @return a query matching documents within this range.
    */
-  public static PointRangeQuery newRangeQuery(String field, BigInteger lowerValue, boolean lowerInclusive, BigInteger upperValue, boolean upperInclusive) {
+  public static Query newRangeQuery(String field, BigInteger lowerValue, boolean lowerInclusive, BigInteger upperValue, boolean upperInclusive) {
     return newMultiRangeQuery(field, 
                               new BigInteger[] { lowerValue },
                               new boolean[] { lowerInclusive }, 
@@ -203,12 +210,51 @@ public class BigIntegerPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null, or if {@code lowerValue.length != upperValue.length}
    * @return a query matching documents within this range.
    */
-  public static PointRangeQuery newMultiRangeQuery(String field, BigInteger[] lowerValue, boolean lowerInclusive[], BigInteger[] upperValue, boolean upperInclusive[]) {
+  public static Query newMultiRangeQuery(String field, BigInteger[] lowerValue, boolean lowerInclusive[], BigInteger[] upperValue, boolean upperInclusive[]) {
     PointRangeQuery.checkArgs(field, lowerValue, upperValue);
     return new PointRangeQuery(field, BigIntegerPoint.encode(lowerValue), lowerInclusive, BigIntegerPoint.encode(upperValue), upperInclusive) {
       @Override
-      protected String toString(byte[] value) {
+      protected String toString(int dimension, byte[] value) {
         return BigIntegerPoint.decodeDimension(value, 0).toString();
+      }
+    };
+  }
+
+  /**
+   * Create a query matching any of the specified 1D values.  This is the points equivalent of {@code TermsQuery}.
+   * 
+   * @param field field name. must not be {@code null}.
+   * @param valuesIn all values to match
+   */
+  public static Query newSetQuery(String field, BigInteger... valuesIn) throws IOException {
+
+    // Don't unexpectedly change the user's incoming values array:
+    BigInteger[] values = valuesIn.clone();
+
+    Arrays.sort(values);
+
+    final BytesRef value = new BytesRef(new byte[BYTES]);
+
+    return new PointInSetQuery(field, 1, BYTES,
+                               new BytesRefIterator() {
+
+                                 int upto;
+
+                                 @Override
+                                 public BytesRef next() {
+                                   if (upto == values.length) {
+                                     return null;
+                                   } else {
+                                     encodeDimension(values[upto], value.bytes, 0);
+                                     upto++;
+                                     return value;
+                                   }
+                                 }
+                               }) {
+      @Override
+      protected String toString(byte[] value) {
+        assert value.length == BYTES;
+        return decodeDimension(value, 0).toString();
       }
     };
   }

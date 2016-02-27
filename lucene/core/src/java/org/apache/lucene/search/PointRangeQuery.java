@@ -51,6 +51,8 @@ import org.apache.lucene.util.StringHelper;
  * @see FloatPoint
  * @see DoublePoint
  * @see BinaryPoint 
+ *
+ * @lucene.experimental
  */
 public abstract class PointRangeQuery extends Query {
   final String field;
@@ -86,6 +88,12 @@ public abstract class PointRangeQuery extends Query {
     numDims = lowerPoint.length;
     if (upperPoint.length != numDims) {
       throw new IllegalArgumentException("lowerPoint has length=" + numDims + " but upperPoint has different length=" + upperPoint.length);
+    }
+    if (lowerInclusive.length != numDims) {
+      throw new IllegalArgumentException("lowerInclusive has length=" + lowerInclusive.length + " but expected=" + numDims);
+    }
+    if (upperInclusive.length != numDims) {
+      throw new IllegalArgumentException("upperInclusive has length=" + upperInclusive.length + " but expected=" + numDims);
     }
     this.lowerPoint = lowerPoint;
     this.lowerInclusive = lowerInclusive;
@@ -281,12 +289,12 @@ public abstract class PointRangeQuery extends Query {
   @Override
   public int hashCode() {
     int hash = super.hashCode();
-    hash += Arrays.hashCode(lowerPoint)^0x14fa55fb;
-    hash += Arrays.hashCode(upperPoint)^0x733fa5fe;
-    hash += Arrays.hashCode(lowerInclusive)^0x14fa55fb;
-    hash += Arrays.hashCode(upperInclusive)^0x733fa5fe;
-    hash += numDims^0x14fa55fb;
-    hash += Objects.hashCode(bytesPerDim);
+    hash = 31 * hash + Arrays.hashCode(lowerPoint);
+    hash = 31 * hash + Arrays.hashCode(upperPoint);
+    hash = 31 * hash + Arrays.hashCode(lowerInclusive);
+    hash = 31 * hash + Arrays.hashCode(upperInclusive);
+    hash = 31 * hash + numDims;
+    hash = 31 * hash + Objects.hashCode(bytesPerDim);
     return hash;
   }
 
@@ -328,7 +336,7 @@ public abstract class PointRangeQuery extends Query {
       if (lowerPoint[i] == null) {
         sb.append('*');
       } else {
-        sb.append(toString(lowerPoint[i]));
+        sb.append(toString(i, lowerPoint[i]));
       }
 
       sb.append(" TO ");
@@ -336,7 +344,7 @@ public abstract class PointRangeQuery extends Query {
       if (upperPoint[i] == null) {
         sb.append('*');
       } else {
-        sb.append(toString(upperPoint[i]));
+        sb.append(toString(i, upperPoint[i]));
       }
 
       if (upperInclusive[i]) {
@@ -353,8 +361,9 @@ public abstract class PointRangeQuery extends Query {
    * Returns a string of a single value in a human-readable format for debugging.
    * This is used by {@link #toString()}.
    *
+   * @param dimension dimension of the particular value
    * @param value single value, never null
    * @return human readable value for debugging
    */
-  protected abstract String toString(byte[] value);
+  protected abstract String toString(int dimension, byte[] value);
 }

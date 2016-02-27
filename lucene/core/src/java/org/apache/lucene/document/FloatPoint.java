@@ -16,14 +16,21 @@
  */
 package org.apache.lucene.document;
 
+import java.io.IOException;
+import java.util.Arrays;
+
+import org.apache.lucene.search.PointInSetQuery;
 import org.apache.lucene.search.PointRangeQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.BytesRefIterator;
 import org.apache.lucene.util.NumericUtils;
 
 /** 
- * A float field that is indexed dimensionally such that finding
- * all documents within an N-dimensional at search time is
- * efficient.  Multiple values for the same field in one documents
+ * An indexed {@code float} field.
+ * <p>
+ * Finding all documents within an N-dimensional at search time is
+ * efficient.  Multiple values for the same field in one document
  * is allowed.
  * <p>
  * This field defines static factory methods for creating common queries:
@@ -31,6 +38,7 @@ import org.apache.lucene.util.NumericUtils;
  *   <li>{@link #newExactQuery newExactQuery()} for matching an exact 1D point.
  *   <li>{@link #newRangeQuery newRangeQuery()} for matching a 1D range.
  *   <li>{@link #newMultiRangeQuery newMultiRangeQuery()} for matching points/ranges in n-dimensional space.
+ *   <li>{@link #newSetQuery newSetQuery()} for matching a set of 1D values.
  * </ul>
  */
 public final class FloatPoint extends Field {
@@ -100,8 +108,8 @@ public final class FloatPoint extends Field {
   @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
-    result.append(type.toString());
-    result.append('<');
+    result.append(getClass().getSimpleName());
+    result.append(" <");
     result.append(name);
     result.append(':');
 
@@ -132,13 +140,13 @@ public final class FloatPoint extends Field {
   // public helper methods (e.g. for queries)
   
   /** Encode single float dimension */
-  public static void encodeDimension(Float value, byte dest[], int offset) {
-    NumericUtils.intToBytesDirect(NumericUtils.floatToSortableInt(value), dest, offset);
+  public static void encodeDimension(float value, byte dest[], int offset) {
+    NumericUtils.intToBytes(NumericUtils.floatToSortableInt(value), dest, offset);
   }
   
   /** Decode single float dimension */
-  public static Float decodeDimension(byte value[], int offset) {
-    return NumericUtils.sortableIntToFloat(NumericUtils.bytesToIntDirect(value, offset));
+  public static float decodeDimension(byte value[], int offset) {
+    return NumericUtils.sortableIntToFloat(NumericUtils.bytesToInt(value, offset));
   }
   
   // static methods for generating queries
@@ -154,7 +162,7 @@ public final class FloatPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null.
    * @return a query matching documents with this exact value
    */
-  public static PointRangeQuery newExactQuery(String field, float value) {
+  public static Query newExactQuery(String field, float value) {
     return newRangeQuery(field, value, true, value, true);
   }
   
@@ -178,7 +186,7 @@ public final class FloatPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null.
    * @return a query matching documents within this range.
    */
-  public static PointRangeQuery newRangeQuery(String field, Float lowerValue, boolean lowerInclusive, Float upperValue, boolean upperInclusive) {
+  public static Query newRangeQuery(String field, Float lowerValue, boolean lowerInclusive, Float upperValue, boolean upperInclusive) {
     return newMultiRangeQuery(field, 
                               new Float[] { lowerValue },
                               new boolean[] { lowerInclusive }, 
@@ -203,12 +211,51 @@ public final class FloatPoint extends Field {
    * @throws IllegalArgumentException if {@code field} is null, or if {@code lowerValue.length != upperValue.length}
    * @return a query matching documents within this range.
    */
-  public static PointRangeQuery newMultiRangeQuery(String field, Float[] lowerValue, boolean lowerInclusive[], Float[] upperValue, boolean upperInclusive[]) {
+  public static Query newMultiRangeQuery(String field, Float[] lowerValue, boolean lowerInclusive[], Float[] upperValue, boolean upperInclusive[]) {
     PointRangeQuery.checkArgs(field, lowerValue, upperValue);
     return new PointRangeQuery(field, FloatPoint.encode(lowerValue), lowerInclusive, FloatPoint.encode(upperValue), upperInclusive) {
       @Override
+      protected String toString(int dimension, byte[] value) {
+        return Float.toString(FloatPoint.decodeDimension(value, 0));
+      }
+    };
+  }
+
+  /**
+   * Create a query matching any of the specified 1D values.  This is the points equivalent of {@code TermsQuery}.
+   * 
+   * @param field field name. must not be {@code null}.
+   * @param valuesIn all values to match
+   */
+  public static Query newSetQuery(String field, float... valuesIn) throws IOException {
+
+    // Don't unexpectedly change the user's incoming values array:
+    float[] values = valuesIn.clone();
+
+    Arrays.sort(values);
+
+    final BytesRef value = new BytesRef(new byte[Float.BYTES]);
+
+    return new PointInSetQuery(field, 1, Float.BYTES,
+                               new BytesRefIterator() {
+
+                                 int upto;
+
+                                 @Override
+                                 public BytesRef next() {
+                                   if (upto == values.length) {
+                                     return null;
+                                   } else {
+                                     encodeDimension(values[upto], value.bytes, 0);
+                                     upto++;
+                                     return value;
+                                   }
+                                 }
+                               }) {
+      @Override
       protected String toString(byte[] value) {
-        return FloatPoint.decodeDimension(value, 0).toString();
+        assert value.length == Float.BYTES;
+        return Float.toString(decodeDimension(value, 0));
       }
     };
   }

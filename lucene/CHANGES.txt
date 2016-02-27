@@ -67,6 +67,11 @@ New Features
 * LUCENE-7040: Upgrade morfologik-stemming to version 2.1.0.
   (Dawid Weiss)
 
+* LUCENE-7048: Add XXXPoint.newSetQuery, to create a query that
+  efficiently matches all documents containing any of the specified
+  point values.  This is the analog of TermsQuery, but for points
+  instead.   (Adrien Grand, Robert Muir, Mike McCandless)
+
 API Changes
 
 * LUCENE-6067: Accountable.getChildResources has a default
@@ -109,6 +114,9 @@ Optimizations
   IntroSorter instead of InPlaceMergeSorter, and specialize 1D
   merging to merge sort the already sorted segments instead of
   re-indexing (Mike McCandless)
+
+* LUCENE-6793: LegacyNumericRangeQuery.hashCode() is now less subject to hash
+  collisions. (J.B. Langston via Adrien Grand)
 
 Changes in Runtime Behavior
 
